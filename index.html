@@ -278,11 +278,19 @@ footer{font-size:12px;color:var(--muted);text-align:center}
 
 <script>
 const $=id=>document.getElementById(id);
-const API="https://script.google.com/macros/s/AKfycby0mevPP90om_niLAQ6Wr3RtBMZRrnmCQgazMuvnfD42-gHR-LzEbwsYAXCz8hLALx4/exec";
+const API="https://license-api.datilishes.workers.dev";
+const wait=ms=>new Promise(r=>setTimeout(r,ms));
 async function call(fn,...args){
-  const r=await fetch(API,{method:"POST",body:JSON.stringify({fn,args}),credentials:"omit",redirect:"follow"});
-  if(!r.ok)throw new Error("HTTP_"+r.status);
-  const j=await r.json();
+  let j=null;
+  for(let i=0;i<4;i++){            // retry quietly when the server is busy or the network blips
+    if(i)await wait(1500*i);
+    try{
+      const r=await fetch(API,{method:"POST",body:JSON.stringify({fn,args}),credentials:"omit",redirect:"follow"});
+      if(!r.ok){j={error:"busy"};continue}
+      j=await r.json();
+    }catch(e){j={error:"busy"};continue}
+    if(!(j&&j.error==="busy"))break;
+  }
   if(j&&j.error&&fn!=="login")throw new Error(j.error);
   return j;
 }
@@ -305,12 +313,12 @@ $("pad").addEventListener("click",async e=>{
   if(b.dataset.k==="del"){entry=entry.slice(0,-1);drawPin();return}
   if(entry.length>=4)return;entry+=b.textContent;drawPin();
   if(entry.length===4){busy=true;driving(true);
-    try{const r=await call("login",entry);
+    try{const r=await call("login",entry,local.get("dk"));
       if(r.error){driving(false);
         if(r.error==="locked")shake("יותר מדי ניסיונות. הכניסה נעולה זמנית");
         else if(r.error==="busy")shake("נסה שוב");
         else shake("קוד שגוי")}
-      else{token=r.token;store.set("tk",token);$("gateMsg").textContent="";await load(true);entry="";drawPin();driving(false)}
+      else{token=r.token;store.set("tk",token);if(r.deviceKey)local.set("dk",r.deviceKey);$("gateMsg").textContent="";await load(true);entry="";drawPin();driving(false)}
     }catch(err){driving(false);shake("אין חיבור. נסה שוב")}
     busy=false}
 });
