@@ -153,6 +153,15 @@ h2{font-family:var(--f-display);font-size:38px;line-height:1;margin:0;font-weigh
 
 footer{font-size:12px;color:var(--muted);text-align:center}
 @media (prefers-reduced-motion:reduce){*,*::before,*::after{animation:none!important;transition:none!important}}
+
+/* Driving loader */
+.drive{display:flex;flex-direction:column;align-items:center;gap:14px;width:min(320px,100%)}
+.lane{position:relative;width:100%;height:64px;background:var(--asphalt);border-radius:12px;overflow:hidden}
+.lane::before{content:"";position:absolute;left:-40px;right:-40px;top:50%;height:4px;margin-top:-2px;background:repeating-linear-gradient(90deg,var(--dash) 0 22px,transparent 22px 40px);animation:lane .45s linear infinite}
+@keyframes lane{to{transform:translateX(40px)}}
+.car{position:absolute;left:50%;top:50%;width:84px;height:40px;margin:-24px 0 0 -42px;animation:bob .35s ease-in-out infinite alternate}
+@keyframes bob{to{transform:translateY(-2px)}}
+.drive p{margin:0;font-weight:600;font-size:17px}
 </style>
 <style>
 .status-err{color:var(--bad);font-size:13px;font-weight:600}
@@ -174,6 +183,16 @@ footer{font-size:12px;color:var(--muted);text-align:center}
     <button type="button">4</button><button type="button">5</button><button type="button">6</button>
     <button type="button">7</button><button type="button">8</button><button type="button">9</button>
     <button type="button" data-k="del" aria-label="מחק">⌫</button><button type="button">0</button><span></span>
+  </div>
+  <div class="drive" id="drive" hidden>
+    <div class="lane"><svg class="car" viewBox="0 0 84 40" aria-hidden="true">
+      <path d="M6 28 L8 18 Q10 14 16 14 L26 14 L34 5 Q36 3 40 3 L60 3 Q64 3 66 7 L72 14 L78 15 Q82 16 82 21 L82 28 Z" fill="var(--plate)" stroke="#111" stroke-width="2.5" stroke-linejoin="round"/>
+      <path d="M30 14 L37 7 L48 7 L48 14 Z M52 7 L61 7 L67 14 L52 14 Z" fill="#cfe3f5" stroke="#111" stroke-width="2"/>
+      <rect x="2" y="20" width="6" height="4" rx="1" fill="#fff6c4" stroke="#111" stroke-width="1.5"/>
+      <circle cx="20" cy="30" r="7" fill="#111"/><circle cx="20" cy="30" r="3" fill="#bbb"/>
+      <circle cx="66" cy="30" r="7" fill="#111"/><circle cx="66" cy="30" r="3" fill="#bbb"/>
+    </svg></div>
+    <p>נוהגים בסבלנות ומגיעים בשלום...</p>
   </div>
   <div class="gate-msg" id="gateMsg"></div>
 </section>
@@ -278,19 +297,21 @@ let token=store.get("tk"),data=null,shown=0;
 
 /* ---------- gate ---------- */
 let entry="",busy=false;
+function driving(on){$("drive").hidden=!on;$("pad").hidden=on;$("gateMsg").textContent=""}
 function drawPin(){[...$("pin").children].forEach((c,i)=>c.textContent=entry[i]?"•":"")}
 function shake(msg){$("pin").classList.remove("err");void $("pin").offsetWidth;$("pin").classList.add("err");$("gateMsg").textContent=msg;setTimeout(()=>{entry="";drawPin()},400)}
 $("pad").addEventListener("click",async e=>{
   const b=e.target.closest("button");if(!b||busy)return;
   if(b.dataset.k==="del"){entry=entry.slice(0,-1);drawPin();return}
   if(entry.length>=4)return;entry+=b.textContent;drawPin();
-  if(entry.length===4){busy=true;
+  if(entry.length===4){busy=true;driving(true);
     try{const r=await call("login",entry);
-      if(r.error==="locked")shake("יותר מדי ניסיונות. הכניסה נעולה זמנית");
-      else if(r.error==="busy")shake("נסה שוב")
-      else if(r.error)shake("קוד שגוי");
-      else{token=r.token;store.set("tk",token);entry="";drawPin();$("gateMsg").textContent="";await load(true)}
-    }catch(err){shake("אין חיבור. נסה שוב")}
+      if(r.error){driving(false);
+        if(r.error==="locked")shake("יותר מדי ניסיונות. הכניסה נעולה זמנית");
+        else if(r.error==="busy")shake("נסה שוב");
+        else shake("קוד שגוי")}
+      else{token=r.token;store.set("tk",token);$("gateMsg").textContent="";await load(true);entry="";drawPin();driving(false)}
+    }catch(err){driving(false);shake("אין חיבור. נסה שוב")}
     busy=false}
 });
 $("out").onclick=()=>{token=null;store.del("tk");data=null;$("app").hidden=true;$("gate").hidden=false};
