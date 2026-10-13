@@ -301,7 +301,29 @@ const fmtD=d=>{const[,m,dd]=String(d).split("-");return dd+"."+m};
 const sign=a=>a>0?"+"+a:a<0?"−"+Math.abs(a):"0";
 const money=a=>(a>0?"+":a<0?"−":"")+"₪"+Math.abs(a);
 const cls=a=>a>0?"g":a<0?"r":"z";
-let token=store.get("tk"),data=null,shown=0;
+let token=store.get("tk"),data=null,shown=0,demo=false;
+
+/* ---------- demo (code 1234): example data only, never touches the server ---------- */
+const DEMO_PIN="1234";
+function demoData(){
+  const day=n=>{const d=new Date(Date.now()-n*864e5);return d.toISOString().slice(0,10)};
+  const now=Date.now();
+  const e=[
+    [0,"mashov","הצטיינות","מתמטיקה",10],
+    [1,"manual","","למד חברותא עם סבא",20],
+    [2,"mashov","איחור","אנגלית",-5],
+    [3,"mashov","הצטיינות","תנ״ך",10],
+    [6,"mashov","חיסור מוצדק","יום מלא",0],
+    [7,"mashov","הצטיינות","גמרא",10],
+    [9,"mashov","הפרעה","היסטוריה",-10],
+    [13,"mashov","הצטיינות","מתמטיקה",10],
+    [15,"mashov","אי הבאת ציוד","פיזיקה",-5],
+    [20,"mashov","הצטיינות","שחרית",10],
+    [23,"mashov","הצטיינות","אנגלית",10],
+    [27,"mashov","חיסור","ספרות",-10]
+  ].map(([n,src,type,subject,amount],i)=>({key:"demo"+i,source:src,date:day(n),subject,type,amount,seenAt:now-n*864e5}));
+  return {role:"parent",entries:e,balance:e.reduce((t,x)=>t+x.amount,0),status:{lastSync:now-12*60000,error:"",hasCreds:true}};
+}
 
 /* ---------- gate ---------- */
 let entry="",busy=false;
@@ -313,6 +335,7 @@ $("pad").addEventListener("click",async e=>{
   if(b.dataset.k==="del"){entry=entry.slice(0,-1);drawPin();return}
   if(entry.length>=4)return;entry+=b.textContent;drawPin();
   if(entry.length===4){busy=true;driving(true);
+    if(entry===DEMO_PIN){await wait(1800);demo=true;data=demoData();await load(true);entry="";drawPin();driving(false);busy=false;return}
     try{const r=await call("login",entry,local.get("dk"));
       if(r.error){driving(false);
         if(r.error==="locked")shake("יותר מדי ניסיונות. הכניסה נעולה זמנית");
@@ -322,19 +345,24 @@ $("pad").addEventListener("click",async e=>{
     }catch(err){driving(false);shake("אין חיבור. נסה שוב")}
     busy=false}
 });
-$("out").onclick=()=>{token=null;store.del("tk");data=null;$("app").hidden=true;$("gate").hidden=false};
+$("out").onclick=()=>{demo=false;token=null;store.del("tk");data=null;$("app").hidden=true;$("gate").hidden=false};
 
 /* ---------- data ---------- */
 async function load(first){
-  try{data=await call("getData",token)}
-  catch(err){if(String(err).includes("AUTH")){$("out").click();return}throw err}
+  if(!demo){
+    try{data=await call("getData",token)}
+    catch(err){if(String(err).includes("AUTH")){$("out").click();return}throw err}
+  }
   $("gate").hidden=true;$("app").hidden=false;
   const p=data.role==="parent";
   $("parent").hidden=!p;$("mode").hidden=!p;$("sync").hidden=!p;
   if(p)drawStatus();
+  $("mode").textContent=demo?"מצב דמו · נתונים לדוגמה":"מצב הורים";
+  $("credsToggle").hidden=demo?true:$("credsToggle").hidden;
   if(first){shown=0;window.scrollTo(0,0)}
   render();
-  if(first)notifyNew();
+  if(first&&demo){const x=data.entries[0];toast("התקבלה "+esc(x.type)+"! <span class=\"ltr\">"+money(x.amount)+"</span>",x.subject+" · עודכן בקופת הרישיון",x.amount)}
+  else if(first)notifyNew();
 }
 
 function ago(ts){if(!ts)return"עוד לא נבדק";const m=Math.round((Date.now()-ts)/60000);
@@ -426,7 +454,10 @@ function notifyNew(){
 /* ---------- parent actions ---------- */
 $("manual").addEventListener("submit",async ev=>{ev.preventDefault();
   const a=parseInt($("mAmt").value,10),why=$("mWhy").value.trim();if(!a)return;
-  const f=ev.target;f.classList.add("loading");
+  const f=ev.target;
+  if(demo){const now=Date.now();data.entries.unshift({key:"d"+now,source:"manual",date:new Date().toISOString().slice(0,10),subject:why||"עדכון",type:"",amount:a,seenAt:now});
+    data.balance+=a;render();toast(esc(why||"עדכון")+` <span class="ltr">${money(a)}</span>`,"דמו בלבד · לא נשמר",a);$("mAmt").value="";$("mWhy").value="";return}
+  f.classList.add("loading");
   try{data=await call("addManual",token,a,why);render();
     toast(esc(why||"עדכון")+` <span class="ltr">${money(a)}</span>`,"עודכן בקופת הרישיון",a);
     $("mAmt").value="";$("mWhy").value="";
@@ -442,7 +473,7 @@ $("creds").addEventListener("submit",async ev=>{ev.preventDefault();
   f.classList.remove("loading")});
 
 /* refresh while open */
-setInterval(()=>{if(token&&!$("app").hidden)load(false).catch(()=>{})},5*60*1000);
+setInterval(()=>{if(!demo&&token&&!$("app").hidden)load(false).catch(()=>{})},5*60*1000);
 if(token)load(true).catch(()=>{token=null;store.del("tk")});
 </script>
 
